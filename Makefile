@@ -185,6 +185,7 @@ UPROGS=\
 	$U/_kill\
 	$U/_ln\
 	$U/_ls\
+	$U/_trace\
 	$U/_mkdir\
 	$U/_rm\
 	$U/_sh\
@@ -193,6 +194,7 @@ UPROGS=\
 	$U/_grind\
 	$U/_wc\
 	$U/_zombie\
+	$U/_sysinfotest\
 
 
 
