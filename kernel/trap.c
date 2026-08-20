@@ -66,7 +66,20 @@ usertrap(void)
 
     syscall();
   } else if((which_dev = devintr()) != 0){
-    // ok
+    if(which_dev == 2){
+        struct proc *p = myproc();
+        if(p->interval != 0){
+            p->ticks += 1;
+            if(p->ticks >= p->interval && p->in_handler == 0){
+                // 保存被打断的原始寄存器现场
+                memmove(&p->oritf, p->trapframe, sizeof(struct trapframe));
+                // 修改返回pc，trap返回后跳转到handler
+                p->trapframe->epc = p->handler;
+               // p->in_handler = 1;
+                p->ticks = 0; //重置tick计数器，实现周期性触发
+            }
+        }
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
