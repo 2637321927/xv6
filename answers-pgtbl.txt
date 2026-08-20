@@ -1,0 +1,5 @@
+Q1: In pgaccess, what happens if a user passes a virtual address that is not mapped? Why?
+A: If the virtual address is not mapped, one of the intermediate page‑table PTE_V bits will not be set. Our code detects this condition and returns -1 to the caller. We must return an error because there is no valid PTE for that page, so we cannot read the PTE_A access bit.
+
+Q2: Why must pgaccess clear PTE_A bit?
+A: The RISC‑V hardware sets PTE_A automatically whenever the page is accessed. If we do not clear PTE_A after reading it, this bit will stay set forever. Subsequent calls to pgaccess would incorrectly report that page has been accessed, even if there were no new accesses since last pgaccess call. Clearing PTE makes it possible to track accesses between successive pgaccess invocations.

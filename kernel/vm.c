@@ -432,3 +432,37 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+#ifdef LAB_PGTBL
+// 递归辅助函数，dot代表当前层级，控制打印缩进..
+void
+subvmprint(pagetable_t pagetable, int dot)
+{
+  if(dot > 3)
+    return;
+
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if(pte & PTE_V){
+      // 输出缩进 ".."
+      for(int j = 0; j < dot; j++){
+        if(j != 0)
+          printf(" ");
+        printf("..");
+      }
+      printf("%d: ", i);
+      printf("pte %p ", pte);
+      uint64 pa = PTE2PA(pte);
+      printf("pa %p\n", pa);
+      // 递归遍历下一级页表
+      subvmprint((pagetable_t)pa, dot + 1);
+    }
+  }
+}
+
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+  subvmprint(pagetable, 1);
+}
+#endif

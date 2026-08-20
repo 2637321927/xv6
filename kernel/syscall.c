@@ -139,6 +139,7 @@ static uint64 (*syscalls[])(void) = {
 #ifdef LAB_PGTBL
 [SYS_pgaccess] sys_pgaccess,
 #endif
+
 };
 
 
@@ -158,3 +159,4 @@ syscall(void)
     p->trapframe->a0 = -1;
   }
 }
+
