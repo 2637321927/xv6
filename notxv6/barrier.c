@@ -30,7 +30,25 @@ barrier()
   // Block until all threads have called barrier() and
   // then increment bstate.round.
   //
-  
+  pthread_mutex_lock(&bstate.barrier_mutex);
+
+  // 记录当前轮次，用于区分是哪一轮的等待
+  int current_round = bstate.round;
+  bstate.nthread++;
+
+  if(bstate.nthread == nthread){
+    // 最后一个到达的线程：开启新一轮，重置计数，唤醒全部线程
+    bstate.round++;
+    bstate.nthread = 0;
+    pthread_cond_broadcast(&bstate.barrier_cond);
+  }else{
+    // 未全部到达，等待；while判断防止虚假唤醒、防止提前进入下一轮
+    while(bstate.round == current_round){
+      pthread_cond_wait(&bstate.barrier_cond, &bstate.barrier_mutex);
+    }
+  }
+
+  pthread_mutex_unlock(&bstate.barrier_mutex);
 }
 
 static void *
