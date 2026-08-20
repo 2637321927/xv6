@@ -67,6 +67,11 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 13 || r_scause() == 15 || r_scause() == 12){
+    // page fault: scause 13 = load, 15 = store, 12 = instruction.
+    // stval holds the virtual address that could not be translated.
+    if(pgfault(PGROUNDDOWN(r_stval())) == -1)
+      p->killed = 1;
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

@@ -141,6 +141,10 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // Initialize the VMA array and the heap-top pointer for mmap.
+  memset(p->vma, 0, sizeof(p->vma));
+  p->curend = MAXVA - 2 * PGSIZE;
+
   return p;
 }
 
@@ -301,6 +305,16 @@ fork(void)
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
 
+  // Copy the parent's mmap regions to the child, incrementing the
+  // reference count of each mapped file.  The child does not share
+  // physical pages with the parent; it will allocate fresh pages on
+  // page faults.
+  memmove(np->vma, p->vma, sizeof(p->vma));
+  np->curend = p->curend;
+  for(i = 0; i < MAXVMA; i++)
+    if(np->vma[i].valid)
+      filedup(np->vma[i].f);
+
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
@@ -343,6 +357,12 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
+
+  // Unmap all mmap-ed regions as if munmap had been called.
+  for(int i = 0; i < MAXVMA; i++){
+    if(p->vma[i].valid)
+      subunmap(p->vma[i].va, p->vma[i].len);
+  }
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){

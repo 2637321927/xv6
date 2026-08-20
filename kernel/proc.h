@@ -1,3 +1,6 @@
+struct file;
+struct inode;
+
 // Saved registers for kernel context switches.
 struct context {
   uint64 ra;
@@ -82,6 +85,20 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+#define MAXVMA 16
+
+// Virtual memory area describing an mmap-ed region.
+struct vma_t {
+  int valid;            // 1 if this entry is in use, 0 otherwise
+  uint64 va;            // start virtual address of the mapping
+  uint len;             // length of the mapping in bytes
+  int prot;             // PTE permission flags (PTE_R / PTE_W)
+  int flags;            // MAP_SHARED or MAP_PRIVATE
+  int fd;               // file descriptor used at mmap time
+  long off;             // offset within the file
+  struct file *f;       // pointer to the mapped file
+};
+
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -105,4 +122,6 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  struct vma_t vma[MAXVMA];    // mmap-ed regions
+  uint64 curend;               // top of the heap area for VMA allocation
 };
