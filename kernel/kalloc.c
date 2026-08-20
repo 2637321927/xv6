@@ -22,11 +22,23 @@ struct {
   struct spinlock lock;
   struct run *freelist;
 } kmem;
-
+// 每个CPU对应的空闲链表以及独立锁
+struct cpu_freelist {
+  struct spinlock lock;
+  struct run *free_head;
+};
+// NCPU代表系统最大CPU核心数量
+static struct cpu_freelist percpu_kmem[NCPU];
 void
-kinit()
+kinit(void)
 {
-  initlock(&kmem.lock, "kmem");
+  // 逐个初始化每个CPU的锁，锁名以kmem开头
+  for(int cpu_idx = 0; cpu_idx < NCPU; cpu_idx++){
+    char buf[16];
+    snprintf(buf, sizeof(buf), "kmem%d", cpu_idx);
+    initlock(&percpu_kmem[cpu_idx].lock, buf);
+  }
+  // 将end到PHYSTOP之间物理页全部释放进入空闲链表
   freerange(end, (void*)PHYSTOP);
 }
 
