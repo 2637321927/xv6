@@ -309,6 +309,16 @@ sys_open(void)
       return -1;
     }
     ilock(ip);
+    if(ip->type == T_SYMLINK && !(omode & O_NOFOLLOW))
+    {
+      ip = follow_symlink(ip);
+      if(ip == 0)
+      {
+        // follow_symlink内部已经iunlockput释放旧ip
+        end_op();
+        return -1;
+      }
+    }
     if(ip->type == T_DIR && omode != O_RDONLY){
       iunlockput(ip);
       end_op();
@@ -483,4 +493,75 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+uint64
+sys_symlink(void)
+{
+    char target_path[MAXPATH];
+    char link_path[MAXPATH];
+    struct inode *sym_ip;
+
+    if(argstr(0, target_path, sizeof(target_path)) < 0 
+    || argstr(1, link_path, sizeof(link_path)) < 0){
+        return -1;
+    }
+
+    begin_op();
+    sym_ip = create(link_path, T_SYMLINK, 0, 0);
+    if(sym_ip == 0){
+        end_op();
+        return -1;
+    }
+
+    int len = strlen(target_path);
+    if(writei(sym_ip, 0, (uint64)target_path, 0, len) != len){
+        iunlockput(sym_ip);
+        end_op();
+        return -1;
+    }
+
+    iunlockput(sym_ip);
+    end_op();
+    return 0;
+}
+
+struct inode*
+follow_symlink(struct inode *ip)
+{
+  uint inums[NSYMLINK];
+  int depth = 0;
+  while(ip->type == T_SYMLINK)
+  {
+    if(depth >= NSYMLINK)
+    {
+      iunlockput(ip);
+      return 0;
+    }
+    // 环检测
+    for(int k = 0; k < depth; k++)
+    {
+      if(inums[k] == ip->inum)
+      {
+        iunlockput(ip);
+        return 0;
+      }
+    }
+    inums[depth++] = ip->inum;
+    char dest_buf[MAXPATH];
+    int rlen = readi(ip, 0, (uint64)dest_buf, 0, MAXPATH - 1);
+    if(rlen <= 0)
+    {
+      iunlockput(ip);
+      return 0;
+    }
+    dest_buf[rlen] = '\0';
+    iunlockput(ip);
+    ip = namei(dest_buf);
+    if(ip == 0)
+    {
+      return 0;
+    }
+    ilock(ip);
+  }
+  return ip;
 }
