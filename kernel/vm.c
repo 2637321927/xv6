@@ -148,8 +148,6 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
-    if(*pte & PTE_V)
-      panic("mappages: remap");
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
       break;
@@ -303,7 +301,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -311,20 +308,18 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+
+    *pte &= ~PTE_W;
+    *pte |= PTE_RSW;
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
+
+    if(mappages(new, i, PGSIZE, pa, flags) != 0){
+      uvmunmap(new, 0, i / PGSIZE, 1);
+      return -1;
     }
+    refinc(pa);
   }
   return 0;
-
- err:
-  uvmunmap(new, 0, i / PGSIZE, 1);
-  return -1;
 }
 
 // mark a PTE invalid for user access.
@@ -347,17 +342,15 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
-
-  while(len > 0){
+  while(len>0){
     va0 = PGROUNDDOWN(dstva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
+    if(cowcopy(pagetable, va0) == -1)
       return -1;
+    pa0 = walkaddr(pagetable, va0);
+    if(pa0 == 0) return -1;
     n = PGSIZE - (dstva - va0);
-    if(n > len)
-      n = len;
-    memmove((void *)(pa0 + (dstva - va0)), src, n);
-
+    if(n>len) n = len;
+    memmove((void*)(pa0 + (dstva - va0)), src, n);
     len -= n;
     src += n;
     dstva = va0 + PGSIZE;
@@ -430,5 +423,40 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return 0;
   } else {
     return -1;
+  }
+}
+int
+cowcopy(pagetable_t pg, uint64 va)
+{
+  if(va >= MAXVA)
+    return -1;
+  pte_t *pte = walk(pg, va, 0);
+  if(pte == 0) return -1;
+  if((*pte & PTE_V) == 0) return -1;
+  if((*pte & PTE_U) == 0) return -1;
+  if( !(*pte & PTE_RSW) )
+    return 0;
+
+  uint64 pa = walkaddr(pg, va);
+  if(pa == 0) return -1;
+
+  if(refget(pa) == 1){
+    *pte |= PTE_W;
+    *pte &= ~PTE_RSW;
+    return 1;
+  }else{
+    char *newpage = kalloc();
+    if(newpage == 0)
+      return -1;
+    memmove(newpage, (char*)pa, PGSIZE);
+    uint flags = PTE_FLAGS(*pte);
+    flags |= PTE_W;
+    flags &= ~PTE_RSW;
+    if(mappages(pg, va, PGSIZE, (uint64)newpage, flags) !=0){
+      kfree(newpage);
+      return -1;
+    }
+    kfree((void*)pa);
+    return 1;
   }
 }

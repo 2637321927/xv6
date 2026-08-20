@@ -22,14 +22,40 @@ struct {
   struct spinlock lock;
   struct run *freelist;
 } kmem;
-
-void
-kinit()
+struct {
+  struct spinlock lock;
+  int arr[NPAGE];
+} refcr;
+void 
+refinc(uint64 pa)
 {
-  initlock(&kmem.lock, "kmem");
-  freerange(end, (void*)PHYSTOP);
+  acquire(&refcr.lock);
+  refcr.arr[INDEX(pa)]++;
+  release(&refcr.lock);
 }
-
+void 
+refdes(uint64 pa)
+{
+  acquire(&refcr.lock);
+  refcr.arr[INDEX(pa)]--;
+  release(&refcr.lock);
+}
+void 
+refset(uint64 pa, int n)
+{
+  acquire(&refcr.lock);
+  refcr.arr[INDEX(pa)] = n;
+  release(&refcr.lock);
+}
+uint64 
+refget(uint64 pa)
+{
+  uint64 val;
+  acquire(&refcr.lock);
+  val = refcr.arr[INDEX(pa)];
+  release(&refcr.lock);
+  return val;
+}
 void
 freerange(void *pa_start, void *pa_end)
 {
@@ -38,45 +64,46 @@ freerange(void *pa_start, void *pa_end)
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
     kfree(p);
 }
+void 
+kinit(void)
+{
+  initlock(&kmem.lock, "kmem");
+  freerange(end, (void*)PHYSTOP);
+  initlock(&refcr.lock, "refcr");
+  memset(refcr.arr, 0, sizeof(refcr.arr));
+}
 
-// Free the page of physical memory pointed at by v,
-// which normally should have been returned by a
-// call to kalloc().  (The exception is when
-// initializing the allocator; see kinit above.)
-void
-kfree(void *pa)
+void 
+*kalloc(void)
 {
   struct run *r;
+  acquire(&kmem.lock);
+  r = kmem.freelist;
+  if(r){
+    kmem.freelist = r->next;
+    refset((uint64)r, 1);
+  }
+  release(&kmem.lock);
+  if(r) memset((char*)r,5,PGSIZE);
+  return r;
+}
 
-  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+void 
+kfree(void *pa)
+{
+  if(((uint64)pa%PGSIZE)!=0 || (char*)pa<end || (uint64)pa>=PHYSTOP)
     panic("kfree");
 
-  // Fill with junk to catch dangling refs.
-  memset(pa, 1, PGSIZE);
-
-  r = (struct run*)pa;
-
+  if(refget((uint64)pa) > 1){
+    refdes((uint64)pa);
+    return;
+  }
+  refset((uint64)pa, 0);
+  memset(pa,1,PGSIZE);
+  struct run *r = (struct run*)pa;
   acquire(&kmem.lock);
   r->next = kmem.freelist;
   kmem.freelist = r;
   release(&kmem.lock);
 }
 
-// Allocate one 4096-byte page of physical memory.
-// Returns a pointer that the kernel can use.
-// Returns 0 if the memory cannot be allocated.
-void *
-kalloc(void)
-{
-  struct run *r;
-
-  acquire(&kmem.lock);
-  r = kmem.freelist;
-  if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
-
-  if(r)
-    memset((char*)r, 5, PGSIZE); // fill with junk
-  return (void*)r;
-}

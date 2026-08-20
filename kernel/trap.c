@@ -41,32 +41,27 @@ usertrap(void)
   if((r_sstatus() & SSTATUS_SPP) != 0)
     panic("usertrap: not from user mode");
 
-  // send interrupts and exceptions to kerneltrap(),
-  // since we're now in the kernel.
   w_stvec((uint64)kernelvec);
 
   struct proc *p = myproc();
   
-  // save user program counter.
   p->trapframe->epc = r_sepc();
   
   if(r_scause() == 8){
     // system call
-
     if(p->killed)
       exit(-1);
-
-    // sepc points to the ecall instruction,
-    // but we want to return to the next instruction.
     p->trapframe->epc += 4;
-
-    // an interrupt will change sstatus &c registers,
-    // so don't enable until done with those registers.
     intr_on();
-
     syscall();
+  } else if(r_scause() == 15){
+    // COW store‑page‑fault
+    uint64 va = PGROUNDDOWN(r_stval());
+    if(va >= p->sz || cowcopy(p->pagetable, va) <= 0){
+      p->killed = 1;
+    }
   } else if((which_dev = devintr()) != 0){
-    // ok
+    // 设备中断：定时器、键盘等，这一段你之前删掉了！
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
@@ -76,12 +71,12 @@ usertrap(void)
   if(p->killed)
     exit(-1);
 
-  // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
     yield();
 
   usertrapret();
 }
+
 
 //
 // return to user space
