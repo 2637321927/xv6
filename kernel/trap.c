@@ -75,7 +75,7 @@ usertrap(void)
                 memmove(&p->oritf, p->trapframe, sizeof(struct trapframe));
                 // 修改返回pc，trap返回后跳转到handler
                 p->trapframe->epc = p->handler;
-               // p->in_handler = 1;
+                p->in_handler = 1;
                 p->ticks = 0; //重置tick计数器，实现周期性触发
             }
         }
